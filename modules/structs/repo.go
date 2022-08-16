@@ -240,6 +240,22 @@ type CreateBranchRepoOption struct {
 	OldBranchName string `json:"old_branch_name" binding:"GitRefName;MaxSize(100)"`
 }
 
+// CreateGitRefRepoOption options when creating a git ref in a repository
+// swagger:model
+type CreateGitRefRepoOption struct {
+	// The name of the fully qualified reference (ie: refs/heads/master). If it doesn't start with 'refs' and have at least two slashes, it will be rejected.
+	//
+	// required: true
+	// unique: true
+	Ref string `json:"ref" binding:"Required;GitRefName;MaxSize(100)"`
+
+	// The SHA1 value for this reference.
+	//
+	// required: true
+	// unique: true
+	Sha string `json:"sha" binding:"Required;GitRefName;MaxSize(40)"`
+}
+
 // TransferRepoOption options when transfer a repository's ownership
 // swagger:model
 type TransferRepoOption struct {

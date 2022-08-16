@@ -1040,8 +1040,10 @@ func Routes() *web.Route {
 						m.Get("/{sha}", repo.GetSingleCommit)
 						m.Get("/{sha}.{diffType:diff|patch}", repo.DownloadCommitDiffOrPatch)
 					})
-					m.Get("/refs", repo.GetGitAllRefs)
-					m.Get("/refs/*", repo.GetGitRefs)
+					m.Group("/refs", func() {
+						m.Combo("").Get(repo.GetGitAllRefs).Post(reqRepoWriter(unit.TypeCode), bind(api.CreateGitRefRepoOption{}), repo.CreateGitRef)
+						m.Get("/*", repo.GetGitRefs)
+					})
 					m.Get("/trees/{sha}", repo.GetTree)
 					m.Get("/blobs/{sha}", repo.GetBlob)
 					m.Get("/tags/{sha}", repo.GetAnnotatedTag)

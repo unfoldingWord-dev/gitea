@@ -4098,6 +4098,53 @@
             "$ref": "#/responses/notFound"
           }
         }
+      },
+      "post": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "repository"
+        ],
+        "summary": "Create a Git Ref",
+        "operationId": "repoCreateGitRef",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "owner of the repo",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name of the repo",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/CreateGitRefRepoOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/Reference"
+          },
+          "404": {
+            "description": "The SHA does not exist."
+          },
+          "409": {
+            "description": "The git ref with the same name already exists."
+          }
+        }
       }
     },
     "/repos/{owner}/{repo}/git/refs/{ref}": {
@@ -14296,6 +14343,29 @@
       },
       "x-go-package": "code.gitea.io/gitea/modules/structs"
     },
+    "CreateGitRefRepoOption": {
+      "description": "CreateGitRefRepoOption options when creating a git ref in a repository",
+      "type": "object",
+      "required": [
+        "ref",
+        "sha"
+      ],
+      "properties": {
+        "ref": {
+          "description": "The name of the fully qualified reference (ie: refs/heads/master). If it doesn't start with 'refs' and have at least two slashes, it will be rejected.",
+          "type": "string",
+          "uniqueItems": true,
+          "x-go-name": "Ref"
+        },
+        "sha": {
+          "description": "The SHA1 value for this reference.",
+          "type": "string",
+          "uniqueItems": true,
+          "x-go-name": "Sha"
+        }
+      },
+      "x-go-package": "code.gitea.io/gitea/modules/structs"
+    },
     "CreateHookOption": {
       "description": "CreateHookOption options when create a hook",
       "type": "object",
@@ -19873,7 +19943,7 @@
     "parameterBodies": {
       "description": "parameterBodies",
       "schema": {
-        "$ref": "#/definitions/CreatePushMirrorOption"
+        "$ref": "#/definitions/CreateGitRefRepoOption"
       }
     },
     "redirect": {
