@@ -243,7 +243,7 @@ type CreateBranchRepoOption struct {
 // CreateGitRefRepoOption options when creating a git ref in a repository
 // swagger:model
 type CreateGitRefRepoOption struct {
-	// The name of the fully qualified reference (ie: refs/heads/master). If it doesn't start with 'refs' and have at least two slashes, it will be rejected.
+	// The name of the reference. 
 	//
 	// required: true
 	// unique: true

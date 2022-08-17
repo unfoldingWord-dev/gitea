@@ -10,13 +10,15 @@ import (
 	"net/url"
 
 	"code.gitea.io/gitea/models"
+	git_model "code.gitea.io/gitea/models/git"
 	"code.gitea.io/gitea/modules/context"
 	"code.gitea.io/gitea/modules/convert"
+	"code.gitea.io/gitea/modules/git"
 	api "code.gitea.io/gitea/modules/structs"
 	"code.gitea.io/gitea/modules/util"
 	"code.gitea.io/gitea/modules/web"
 	"code.gitea.io/gitea/routers/api/v1/utils"
-	releaseservice "code.gitea.io/gitea/services/release"
+	repo_service "code.gitea.io/gitea/services/repository"
 )
 
 // GetGitAllRefs get ref or an list all the refs of a repository
@@ -144,37 +146,59 @@ func CreateGitRef(ctx *context.APIContext) {
 	//   "409":
 	//     description: The git ref with the same name already exists.
 
-	form := web.GetForm(ctx).(*api.CreateGitRefRepoOption)
+	opt := web.GetForm(ctx).(*api.CreateGitRefRepoOption)
 
-	// If target is not provided use default branch
-	if len(form.Sha) == 0 {
-		form.Sha = ctx.Repo.Repository.DefaultBranch
+	// If Sha is not provided use default branch
+	if len(opt.Sha) == 0 {
+		if (ctx.Repo.Repository.IsEmpty) {
+			ctx.Error(http.StatusNotFound, "", "Git Repository is empty.")
+			return
+		} else {
+			opt.Sha = ctx.Repo.Repository.DefaultBranch
+		}
 	}
 
-	commit, err := ctx.Repo.GitRepo.GetCommit(form.Sha)
+	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Sha)
 	if err != nil {
 		ctx.Error(http.StatusNotFound, "target not found", fmt.Errorf("target not found: %v", err))
 		return
 	}
 
-	if err := releaseservice.CreateNewTag(ctx, ctx.Doer, ctx.Repo.Repository, commit.ID.String(), form.Ref, "create message"); err != nil {
-		if models.IsErrTagAlreadyExists(err) {
-			ctx.Error(http.StatusConflict, "tag exist", err)
-			return
+	repoErr := repo_service.CreateNewBranch(ctx, ctx.Doer, ctx.Repo.Repository, commit.ID.String(), opt.Ref)
+	if repoErr != nil {
+		if models.IsErrBranchDoesNotExist(repoErr) {
+			ctx.Error(http.StatusNotFound, "", "The old branch does not exist")
 		}
-		if models.IsErrProtectedTagName(err) {
-			ctx.Error(http.StatusMethodNotAllowed, "CreateNewTag", "user not allowed to create protected tag")
-			return
+		if models.IsErrTagAlreadyExists(repoErr) {
+			ctx.Error(http.StatusConflict, "", "The branch with the same tag already exists.")
+		} else if models.IsErrBranchAlreadyExists(repoErr) || git.IsErrPushOutOfDate(repoErr) {
+			ctx.Error(http.StatusConflict, "", "The branch already exists.")
+		} else if models.IsErrBranchNameConflict(repoErr) {
+			ctx.Error(http.StatusConflict, "", "The branch with the same name already exists.")
+		} else {
+			ctx.Error(http.StatusInternalServerError, "CreateRepoBranch", repoErr)
 		}
-
-		ctx.InternalServerError(err)
 		return
 	}
 
-	tag, err := ctx.Repo.GitRepo.GetTag(form.Ref)
+	branch, err := ctx.Repo.GitRepo.GetBranch(opt.Ref)
 	if err != nil {
-		ctx.InternalServerError(err)
+		ctx.Error(http.StatusInternalServerError, "GetBranch", err)
 		return
 	}
-	ctx.JSON(http.StatusCreated, convert.ToTag(ctx.Repo.Repository, tag))
+
+	branchProtection, err := git_model.GetProtectedBranchBy(ctx, ctx.Repo.Repository.ID, branch.Name)
+	if err != nil {
+		ctx.Error(http.StatusInternalServerError, "GetBranchProtection", err)
+		return
+	}
+
+	br, err := convert.ToBranch(ctx.Repo.Repository, branch, commit, branchProtection, ctx.Doer, ctx.Repo.IsAdmin())
+	if err != nil {
+		ctx.Error(http.StatusInternalServerError, "convert.ToBranch", err)
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, br)
 }
+	
