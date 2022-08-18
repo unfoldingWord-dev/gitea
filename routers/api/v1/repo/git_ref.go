@@ -173,45 +173,14 @@ func CreateGitRef(ctx *context.APIContext) {
 		ctx.InternalServerError(err)
 		return
 	}
-
+	retStruct := &api.Reference{
+		Ref: opt.Sha,
+		URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Sha),
+		Object: &api.GitObject{
+			SHA:  commit.ID.String(),
+			Type: "unknown-type",
+			URL:  ctx.Repo.Repository.APIURL() + "/git/" + url.PathEscape("unknown-type") + "s/" + url.PathEscape(commit.ID.String()),
+		},
+	}
+	ctx.JSON(http.StatusOK, retStruct)
 }
-/*
-	repoErr := repo_service.CreateNewBranch(ctx, ctx.Doer, ctx.Repo.Repository, commit.ID.String(), opt.Ref)
-	if repoErr != nil {
-		if models.IsErrBranchDoesNotExist(repoErr) {
-			ctx.Error(http.StatusNotFound, "", "The old branch does not exist")
-		}
-		if models.IsErrTagAlreadyExists(repoErr) {
-			ctx.Error(http.StatusConflict, "", "The branch with the same tag already exists.")
-		} else if models.IsErrBranchAlreadyExists(repoErr) || git.IsErrPushOutOfDate(repoErr) {
-			ctx.Error(http.StatusConflict, "", "The branch already exists.")
-		} else if models.IsErrBranchNameConflict(repoErr) {
-			ctx.Error(http.StatusConflict, "", "The branch with the same name already exists.")
-		} else {
-			ctx.Error(http.StatusInternalServerError, "CreateRepoBranch", repoErr)
-		}
-		return
-	}
-
-	branch, err := ctx.Repo.GitRepo.GetBranch(opt.Ref)
-	if err != nil {
-		ctx.Error(http.StatusInternalServerError, "GetBranch", err)
-		return
-	}
-
-	branchProtection, err := git_model.GetProtectedBranchBy(ctx, ctx.Repo.Repository.ID, branch.Name)
-	if err != nil {
-		ctx.Error(http.StatusInternalServerError, "GetBranchProtection", err)
-		return
-	}
-
-	br, err := convert.ToBranch(ctx.Repo.Repository, branch, commit, branchProtection, ctx.Doer, ctx.Repo.IsAdmin())
-	if err != nil {
-		ctx.Error(http.StatusInternalServerError, "convert.ToBranch", err)
-		return
-	}
-
-	ctx.JSON(http.StatusCreated, br)
-}
-	
-*/
