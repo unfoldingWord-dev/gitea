@@ -10,10 +10,7 @@ import (
 	"net/url"
 
 	"code.gitea.io/gitea/models"
-	git_model "code.gitea.io/gitea/models/git"
 	"code.gitea.io/gitea/modules/context"
-	"code.gitea.io/gitea/modules/convert"
-	"code.gitea.io/gitea/modules/git"
 	api "code.gitea.io/gitea/modules/structs"
 	"code.gitea.io/gitea/modules/util"
 	"code.gitea.io/gitea/modules/web"
@@ -164,6 +161,21 @@ func CreateGitRef(ctx *context.APIContext) {
 		return
 	}
 
+	if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Sha); err != nil {
+		if models.IsErrRefAlreadyExists(err) {
+			ctx.Error(http.StatusConflict, "ref name exist", err)
+			return
+		} else if models.IsErrProtectedRefName(err) {
+			ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
+			return
+		}
+
+		ctx.InternalServerError(err)
+		return
+	}
+
+}
+/*
 	repoErr := repo_service.CreateNewBranch(ctx, ctx.Doer, ctx.Repo.Repository, commit.ID.String(), opt.Ref)
 	if repoErr != nil {
 		if models.IsErrBranchDoesNotExist(repoErr) {
@@ -202,3 +214,4 @@ func CreateGitRef(ctx *context.APIContext) {
 	ctx.JSON(http.StatusCreated, br)
 }
 	
+*/

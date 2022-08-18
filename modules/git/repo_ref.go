@@ -8,3 +8,9 @@ package git
 func (repo *Repository) GetRefs() ([]*Reference, error) {
 	return repo.GetRefsFiltered("")
 }
+
+// CreateRef creates one ref in the repository
+func (repo *Repository) CreateRef(name, sha string) error {
+	_, _, err := NewCommand(repo.Ctx, "update-ref", name, sha).RunStdString(&RunOpts{Dir: repo.Path})
+	return err
+}
