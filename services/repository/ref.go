@@ -17,9 +17,9 @@ func CreateNewRef(ctx *context.APIContext, doer *user_model.User, commit, ref st
 
 	// Trim '--' prefix to prevent command line argument vulnerability.
 	ref = strings.TrimPrefix(ref, "--")
-	err := ctx.Repo.GitRepo.CreateRef(ref, commit); 
+	err := ctx.Repo.GitRepo.CreateRef(ref, commit)
 	if err != nil {
-		if (strings.Contains(err.Error(), "is not a valid") && strings.Contains(err.Error(), " name")) {
+		if strings.Contains(err.Error(), "is not a valid") && strings.Contains(err.Error(), " name") {
 			return models.ErrInvalidRefName{
 				RefName: ref,
 			}

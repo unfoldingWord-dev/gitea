@@ -111,7 +111,7 @@ func getGitRefsInternal(ctx *context.APIContext, filter string) {
 	ctx.JSON(http.StatusOK, &apiRefs)
 }
 
-// CreateGitRef creates a branch for a repository from a commit SHA
+// CreateGitRef creates a git ref for a repository that points to a target commitish
 func CreateGitRef(ctx *context.APIContext) {
 	// swagger:operation POST /repos/{owner}/{repo}/git/refs repository repoCreateGitRef
 	// ---
@@ -134,34 +134,24 @@ func CreateGitRef(ctx *context.APIContext) {
 	// - name: body
 	//   in: body
 	//   schema:
-	//     "$ref": "#/definitions/CreateGitRefRepoOption"
+	//     "$ref": "#/definitions/CreateGitRefOption"
 	// responses:
 	//   "201":
 	//     "$ref": "#/responses/Reference"
 	//   "404":
-	//     description: The SHA does not exist.
+	//     description: The target does not exist.
 	//   "409":
 	//     description: The git ref with the same name already exists.
 
-	opt := web.GetForm(ctx).(*api.CreateGitRefRepoOption)
+	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
 
-	// If Sha is not provided use default branch
-	if len(opt.Sha) == 0 {
-		if (ctx.Repo.Repository.IsEmpty) {
-			ctx.Error(http.StatusNotFound, "", "Git Repository is empty.")
-			return
-		} else {
-			opt.Sha = ctx.Repo.Repository.DefaultBranch
-		}
-	}
-
-	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Sha)
+	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Target)
 	if err != nil {
 		ctx.Error(http.StatusNotFound, "target not found", fmt.Errorf("target not found: %v", err))
 		return
 	}
 
-	if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Sha); err != nil {
+	if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Ref); err != nil {
 		if models.IsErrRefAlreadyExists(err) {
 			ctx.Error(http.StatusConflict, "ref name exist", err)
 			return
@@ -174,8 +164,135 @@ func CreateGitRef(ctx *context.APIContext) {
 		return
 	}
 	retStruct := &api.Reference{
-		Ref: opt.Sha,
-		URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Sha),
+		Ref: opt.Ref,
+		URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Ref),
+		Object: &api.GitObject{
+			SHA:  commit.ID.String(),
+			Type: "unknown-type",
+			URL:  ctx.Repo.Repository.APIURL() + "/git/" + url.PathEscape("unknown-type") + "s/" + url.PathEscape(commit.ID.String()),
+		},
+	}
+	ctx.JSON(http.StatusOK, retStruct)
+}
+
+// UpdateGitRef updates a branch for a repository from a commit SHA
+func UpdateGitRef(ctx *context.APIContext) {
+	// swagger:operation PATCH /repos/{owner}/{repo}/git/refs repository repoUpdateGitRef
+	// ---
+	// summary: Update a Git Ref
+	// consumes:
+	// - application/json
+	// produces:
+	// - application/json
+	// parameters:
+	// - name: owner
+	//   in: path
+	//   description: owner of the repo
+	//   type: string
+	//   required: true
+	// - name: repo
+	//   in: path
+	//   description: name of the repo
+	//   type: string
+	//   required: true
+	// - name: body
+	//   in: body
+	//   schema:
+	//     "$ref": "#/definitions/UpdateGitRefOption"
+	// responses:
+	//   "201":
+	//     "$ref": "#/responses/Reference"
+	//   "404":
+	//     description: The target or git ref does not exist.
+
+	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
+
+	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Target)
+	if err != nil {
+		ctx.Error(http.StatusNotFound, "target not found", fmt.Errorf("target not found: %v", err))
+		return
+	}
+
+	if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Ref); err != nil {
+		if models.IsErrRefAlreadyExists(err) {
+			ctx.Error(http.StatusConflict, "ref name exist", err)
+			return
+		} else if models.IsErrProtectedRefName(err) {
+			ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
+			return
+		}
+
+		ctx.InternalServerError(err)
+		return
+	}
+	retStruct := &api.Reference{
+		Ref: opt.Ref,
+		URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Ref),
+		Object: &api.GitObject{
+			SHA:  commit.ID.String(),
+			Type: "unknown-type",
+			URL:  ctx.Repo.Repository.APIURL() + "/git/" + url.PathEscape("unknown-type") + "s/" + url.PathEscape(commit.ID.String()),
+		},
+	}
+	ctx.JSON(http.StatusOK, retStruct)
+}
+
+// DeleteGitRef deletes a git ref for a repository that points to a target commitish
+func DeleteGifRef(ctx *context.APIContext) {
+	// swagger:operation DELETE /repos/{owner}/{repo}/git/refs/{ref} repository repoCreateGitRef
+	// ---
+	// summary: Delete a Git Ref
+	// consumes:
+	// - application/json
+	// produces:
+	// - application/json
+	// parameters:
+	// - name: owner
+	//   in: path
+	//   description: owner of the repo
+	//   type: string
+	//   required: true
+	// - name: repo
+	//   in: path
+	//   description: name of the repo
+	//   type: string
+	//   required: true
+	// - name: ref
+	//   in: path
+	//   description: ref to be deleted
+	//   type: string
+	//   required: true
+	// responses:
+	//   "204":
+	//     "$ref": "#/responses/empty"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "422":
+	//     "$ref": "#/responses/validationError"
+
+	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
+
+	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Target)
+	if err != nil {
+		ctx.Error(http.StatusNotFound, "target not found", fmt.Errorf("target not found: %v", err))
+		return
+	}
+
+	if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Ref); err != nil {
+		if models.IsErrRefAlreadyExists(err) {
+			ctx.Error(http.StatusConflict, "ref name exist", err)
+			return
+		} else if models.IsErrProtectedRefName(err) {
+			ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
+			return
+		}
+
+		ctx.InternalServerError(err)
+		return
+	}
+	retStruct := &api.Reference{
+		Ref: opt.Ref,
+		URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Ref),
 		Object: &api.GitObject{
 			SHA:  commit.ID.String(),
 			Type: "unknown-type",

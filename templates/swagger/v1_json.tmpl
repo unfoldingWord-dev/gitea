@@ -4130,7 +4130,7 @@
             "name": "body",
             "in": "body",
             "schema": {
-              "$ref": "#/definitions/CreateGitRefRepoOption"
+              "$ref": "#/definitions/CreateGitRefOption"
             }
           }
         ],
@@ -4139,10 +4139,54 @@
             "$ref": "#/responses/Reference"
           },
           "404": {
-            "description": "The SHA does not exist."
+            "description": "The target does not exist."
           },
           "409": {
             "description": "The git ref with the same name already exists."
+          }
+        }
+      },
+      "patch": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "repository"
+        ],
+        "summary": "Update a Git Ref",
+        "operationId": "repoUpdateGitRef",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "owner of the repo",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name of the repo",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/UpdateGitRefOption"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/Reference"
+          },
+          "404": {
+            "description": "The target or git ref does not exist."
           }
         }
       }
@@ -4186,6 +4230,53 @@
           },
           "404": {
             "$ref": "#/responses/notFound"
+          }
+        }
+      },
+      "delete": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "repository"
+        ],
+        "summary": "Delete a Git Ref",
+        "operationId": "repoCreateGitRef",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "owner of the repo",
+            "name": "owner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name of the repo",
+            "name": "repo",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "ref to be deleted",
+            "name": "ref",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/empty"
+          },
+          "403": {
+            "$ref": "#/responses/forbidden"
+          },
+          "422": {
+            "$ref": "#/responses/validationError"
           }
         }
       }
@@ -14343,25 +14434,25 @@
       },
       "x-go-package": "code.gitea.io/gitea/modules/structs"
     },
-    "CreateGitRefRepoOption": {
-      "description": "CreateGitRefRepoOption options when creating a git ref in a repository",
+    "CreateGitRefOption": {
+      "description": "CreateGitRefOption options when creating a git ref in a repository",
       "type": "object",
       "required": [
         "ref",
-        "sha"
+        "target"
       ],
       "properties": {
         "ref": {
-          "description": "The name of the fully qualified reference (ie: refs/heads/master). If it doesn't start with 'refs' and have at least two slashes, it will be rejected.",
+          "description": "The name of the reference.",
           "type": "string",
           "uniqueItems": true,
           "x-go-name": "Ref"
         },
-        "sha": {
-          "description": "The SHA1 value for this reference.",
+        "target": {
+          "description": "The target commitish for this reference.",
           "type": "string",
           "uniqueItems": true,
-          "x-go-name": "Sha"
+          "x-go-name": "Target"
         }
       },
       "x-go-package": "code.gitea.io/gitea/modules/structs"
@@ -19943,7 +20034,7 @@
     "parameterBodies": {
       "description": "parameterBodies",
       "schema": {
-        "$ref": "#/definitions/CreateGitRefRepoOption"
+        "$ref": "#/definitions/CreateGitRefOption"
       }
     },
     "redirect": {

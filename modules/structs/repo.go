@@ -240,20 +240,21 @@ type CreateBranchRepoOption struct {
 	OldBranchName string `json:"old_branch_name" binding:"GitRefName;MaxSize(100)"`
 }
 
-// CreateGitRefRepoOption options when creating a git ref in a repository
+// CreateGitRefOption options when creating a git ref in a repository
 // swagger:model
-type CreateGitRefRepoOption struct {
-	// The name of the reference. 
+type CreateGitRefOption struct {
+	// The name of the reference.
 	//
 	// required: true
 	// unique: true
 	Ref string `json:"ref" binding:"Required;GitRefName;MaxSize(100)"`
 
-	// The SHA1 value for this reference.
+	// The target commitish for this reference.
 	//
 	// required: true
 	// unique: true
-	Sha string `json:"sha" binding:"Required;GitRefName;MaxSize(40)"`
+	// size: 40
+	Target string `json:"target" binding:"Required;GitRefName"`
 }
 
 // TransferRepoOption options when transfer a repository's ownership
