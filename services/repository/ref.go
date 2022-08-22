@@ -5,6 +5,8 @@
 package repository
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"code.gitea.io/gitea/models"
@@ -13,15 +15,19 @@ import (
 )
 
 // CreateNewRef creates a new ref
-func CreateNewRef(ctx *context.APIContext, doer *user_model.User, commit, ref string) error {
+func CreateNewRef(ctx *context.APIContext, doer *user_model.User, target, ref string) error {
 
-	// Trim '--' prefix to prevent command line argument vulnerability.
-	ref = strings.TrimPrefix(ref, "--")
-	err := ctx.Repo.GitRepo.CreateRef(ref, commit)
-	if err != nil {
-		if strings.Contains(err.Error(), "is not a valid") && strings.Contains(err.Error(), " name") {
-			return models.ErrInvalidRefName{
-				RefName: ref,
+		// Trim '--' prefix to prevent command line argument vulnerability.
+		ref = strings.TrimPrefix(ref, "--")
+		err := ctx.Repo.GitRepo.CreateRef(ref, target)
+		if err != nil {
+
+			errStr, _ := json.Marshal(err)
+			fmt.Println(string(errStr))
+
+			if strings.Contains(err.Error(), "is not a valid") && strings.Contains(err.Error(), " name") {
+				return models.ErrInvalidRefName{
+					RefName: ref,
 			}
 		}
 	}
