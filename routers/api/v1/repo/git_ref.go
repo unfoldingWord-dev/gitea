@@ -219,7 +219,7 @@ func CreateGitRef(ctx *context.APIContext) {
 			ctx.JSON(http.StatusCreated, br)
 		
 		case "commit", "blob":
-			if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Ref); err != nil {
+			if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commit.ID.String()); err != nil {
 				if models.IsErrRefAlreadyExists(err) {
 					ctx.Error(http.StatusConflict, "ref name exist", err)
 					return
@@ -285,7 +285,7 @@ func UpdateGitRef(ctx *context.APIContext) {
 		return
 	}
 
-	if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Ref); err != nil {
+	if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commit.ID.String()); err != nil {
 		if models.IsErrRefAlreadyExists(err) {
 			ctx.Error(http.StatusConflict, "ref name exist", err)
 			return
@@ -350,7 +350,7 @@ func DeleteGifRef(ctx *context.APIContext) {
 		return
 	}
 
-	if err := repo_service.CreateNewRef(ctx, ctx.Doer, commit.ID.String(), opt.Ref); err != nil {
+	if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commit.ID.String()); err != nil {
 		if models.IsErrRefAlreadyExists(err) {
 			ctx.Error(http.StatusConflict, "ref name exist", err)
 			return
