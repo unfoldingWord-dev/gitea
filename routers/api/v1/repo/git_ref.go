@@ -10,7 +10,6 @@ import (
 	"net/url"
 
 	"code.gitea.io/gitea/models"
-	git_model "code.gitea.io/gitea/models/git"
 	"code.gitea.io/gitea/modules/context"
 	"code.gitea.io/gitea/modules/convert"
 	"code.gitea.io/gitea/modules/git"
@@ -19,7 +18,6 @@ import (
 	"code.gitea.io/gitea/modules/web"
 	"code.gitea.io/gitea/routers/api/v1/utils"
 	releaseservice "code.gitea.io/gitea/services/release"
-	repo_service "code.gitea.io/gitea/services/repository"
 )
 
 // GetGitAllRefs get ref or an list all the refs of a repository
@@ -97,15 +95,7 @@ func getGitRefsInternal(ctx *context.APIContext, filter string) {
 
 	apiRefs := make([]*api.Reference, len(refs))
 	for i := range refs {
-		apiRefs[i] = &api.Reference{
-			Ref: refs[i].Name,
-			URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(refs[i].Name),
-			Object: &api.GitObject{
-				SHA:  refs[i].Object.String(),
-				Type: refs[i].Type,
-				URL:  ctx.Repo.Repository.APIURL() + "/git/" + url.PathEscape(refs[i].Type) + "s/" + url.PathEscape(refs[i].Object.String()),
-			},
-		}
+		apiRefs[i] = convert.ToGitRef(ctx.Repo.Repository, refs[i])
 	}
 	// If single reference is found and it matches filter exactly return it as object
 	if len(apiRefs) == 1 && apiRefs[0].Ref == filter {
@@ -148,103 +138,58 @@ func CreateGitRef(ctx *context.APIContext) {
 	//     description: The git ref with the same name already exists.
 
 	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
-	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Target)
-	if err != nil {
-		ctx.Error(http.StatusNotFound, "target not found", fmt.Errorf("target not found: %v", err))
+
+	if ctx.Repo.GitRepo.IsReferenceExist(opt.Ref) {
+		ctx.Error(http.StatusConflict, "git ref already exists:", fmt.Errorf("git ref already exists: %s", opt.Ref))
 		return
 	}
 
-	targetType := ctx.Repo.GitRepo.GetRefType(commit.ID.String());
-	targetTypeStr := string(targetType)
-	switch targetType {
-		case "tag":
-			if err := releaseservice.CreateNewTag(ctx, ctx.Doer, ctx.Repo.Repository, commit.ID.String(), opt.Ref, ""); err != nil {
-				if models.IsErrTagAlreadyExists(err) {
-					ctx.Error(http.StatusConflict, "tag exist", err)
-					return
-				}
-				if models.IsErrProtectedTagName(err) {
-					ctx.Error(http.StatusMethodNotAllowed, "CreateNewTag", "user not allowed to create protected tag")
-					return
-				}
-		
-				ctx.InternalServerError(err)
-				return
-			}
-			tag, err := ctx.Repo.GitRepo.GetTag(opt.Ref)
-			if err != nil {
-				ctx.InternalServerError(err)
-				return
-			}
-			ctx.JSON(http.StatusCreated, convert.ToTag(ctx.Repo.Repository, tag))
-		
-		case "branch":
-			err := repo_service.CreateNewBranch(ctx, ctx.Doer, ctx.Repo.Repository, commit.ID.String(), opt.Ref)
-			if err != nil {
-				if models.IsErrTagAlreadyExists(err) {
-					ctx.Error(http.StatusConflict, "", "The branch with the same tag already exists.")
-				} else if models.IsErrBranchAlreadyExists(err) || git.IsErrPushOutOfDate(err) {
-					ctx.Error(http.StatusConflict, "", "The branch already exists.")
-				} else if models.IsErrBranchNameConflict(err) {
-					ctx.Error(http.StatusConflict, "", "The branch with the same name already exists.")
-				} else {
-					ctx.Error(http.StatusInternalServerError, "CreateRepoBranch", err)
-				}
-				return
-			}
-			branch, err := ctx.Repo.GitRepo.GetBranch(commit.ID.String())
-			if err != nil {
-				ctx.Error(http.StatusInternalServerError, "GetBranch", err)
-				return
-			}
-		
-			commit, err := branch.GetCommit()
-			if err != nil {
-				ctx.Error(http.StatusInternalServerError, "GetCommit", err)
-				return
-			}
-		
-			branchProtection, err := git_model.GetProtectedBranchBy(ctx, ctx.Repo.Repository.ID, branch.Name)
-			if err != nil {
-				ctx.Error(http.StatusInternalServerError, "GetBranchProtection", err)
-				return
-			}
-		
-			br, err := convert.ToBranch(ctx.Repo.Repository, branch, commit, branchProtection, ctx.Doer, ctx.Repo.IsAdmin())
-			if err != nil {
-				ctx.Error(http.StatusInternalServerError, "convert.ToBranch", err)
-				return
-			}
-		
-			ctx.JSON(http.StatusCreated, br)
-		
-		case "commit", "blob":
-			if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commit.ID.String()); err != nil {
-				if models.IsErrRefAlreadyExists(err) {
-					ctx.Error(http.StatusConflict, "ref name exist", err)
-					return
-				} else if models.IsErrProtectedRefName(err) {
-					ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
-					return
-				}
-		
-				ctx.InternalServerError(err)
-				return
-			}
-			retStruct := &api.Reference{
-				Ref: opt.Ref,
-				URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Ref),
-				Object: &api.GitObject{
-					SHA:  commit.ID.String(),
-					Type: targetTypeStr,
-					URL:  ctx.Repo.Repository.APIURL() + "/git/" + targetTypeStr + "s/" + url.PathEscape(commit.ID.String()),
-				},
-			}
-			ctx.JSON(http.StatusOK, retStruct)		
-		default:
-			ctx.Error(http.StatusNotFound, "invalid target type", fmt.Errorf("invalid target type: %v", err))
+	commitID, err := ctx.Repo.GitRepo.GetRefCommitID(opt.Target)
+	if err != nil {
+		if git.IsErrNotExist(err) {
+			ctx.Error(http.StatusNotFound, "target does not exist", fmt.Errorf("target does not exist: %s", opt.Target))
 			return
+		}
+		ctx.Error(http.StatusNotFound, "error getting commit id", fmt.Errorf("error getting commit id: %v", err))
+		return
 	}
+
+	refPrefix, refName := git.SplitRefName(opt.Ref)
+	if refPrefix == git.TagPrefix {
+		if err := releaseservice.CreateNewTag(ctx, ctx.Doer, ctx.Repo.Repository, commitID, refName, ""); err != nil {
+			if models.IsErrTagAlreadyExists(err) {
+				ctx.Error(http.StatusConflict, "tag exist", err)
+				return
+			}
+			if models.IsErrProtectedTagName(err) {
+				ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
+				return
+			}
+
+			ctx.InternalServerError(err)
+			return
+		}
+	} else {
+		if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commitID); err != nil {
+			if models.IsErrRefAlreadyExists(err) {
+				ctx.Error(http.StatusConflict, "ref name exist", err)
+				return
+			}
+			ctx.InternalServerError(err)
+			return
+		}
+	}
+
+	refs, err := ctx.Repo.GitRepo.GetRefsFiltered(opt.Ref)
+	if err != nil {
+		ctx.ServerError("GetRefsFiltered", err)
+		return
+	}
+	if len(refs) != 1 {
+		ctx.Error(http.StatusConflict, "there was a problem creating the gif ref", fmt.Errorf("there was a problem creating the gif ref: %s", opt.Ref))
+		return
+	}
+	ctx.JSON(http.StatusOK, convert.ToGitRef(ctx.Repo.Repository, refs[0]))
 }
 
 // UpdateGitRef updates a branch for a repository from a commit SHA
@@ -279,13 +224,17 @@ func UpdateGitRef(ctx *context.APIContext) {
 
 	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
 
-	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Target)
+	commitID, err := ctx.Repo.GitRepo.GetRefCommitID(opt.Target)
 	if err != nil {
-		ctx.Error(http.StatusNotFound, "target not found", fmt.Errorf("target not found: %v", err))
+		if git.IsErrNotExist(err) {
+			ctx.Error(http.StatusNotFound, "target does not exist", fmt.Errorf("target does not exist: %s", opt.Target))
+			return
+		}
+		ctx.Error(http.StatusNotFound, "error getting commit id", fmt.Errorf("error getting commit id: %v", err))
 		return
 	}
 
-	if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commit.ID.String()); err != nil {
+	if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commitID); err != nil {
 		if models.IsErrRefAlreadyExists(err) {
 			ctx.Error(http.StatusConflict, "ref name exist", err)
 			return
@@ -297,16 +246,17 @@ func UpdateGitRef(ctx *context.APIContext) {
 		ctx.InternalServerError(err)
 		return
 	}
-	retStruct := &api.Reference{
-		Ref: opt.Ref,
-		URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Ref),
-		Object: &api.GitObject{
-			SHA:  commit.ID.String(),
-			Type: "unknown-type",
-			URL:  ctx.Repo.Repository.APIURL() + "/git/" + url.PathEscape("unknown-type") + "s/" + url.PathEscape(commit.ID.String()),
-		},
+
+	refs, err := ctx.Repo.GitRepo.GetRefsFiltered(opt.Ref)
+	if err != nil {
+		ctx.ServerError("GetRefsFiltered", err)
+		return
 	}
-	ctx.JSON(http.StatusOK, retStruct)
+	if len(refs) != 1 {
+		ctx.Error(http.StatusConflict, "there was a problem creating the gif ref", fmt.Errorf("there was a problem creating the gif ref: %s", opt.Ref))
+		return
+	}
+	ctx.JSON(http.StatusOK, convert.ToGitRef(ctx.Repo.Repository, refs[0]))
 }
 
 // DeleteGitRef deletes a git ref for a repository that points to a target commitish
