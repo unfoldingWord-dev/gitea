@@ -7,17 +7,15 @@ package repo
 import (
 	"fmt"
 	"net/http"
-	"net/url"
+	"strings"
 
-	"code.gitea.io/gitea/models"
+	git_model "code.gitea.io/gitea/models/git"
 	"code.gitea.io/gitea/modules/context"
 	"code.gitea.io/gitea/modules/convert"
 	"code.gitea.io/gitea/modules/git"
 	api "code.gitea.io/gitea/modules/structs"
-	"code.gitea.io/gitea/modules/util"
 	"code.gitea.io/gitea/modules/web"
 	"code.gitea.io/gitea/routers/api/v1/utils"
-	releaseservice "code.gitea.io/gitea/services/release"
 )
 
 // GetGitAllRefs get ref or an list all the refs of a repository
@@ -109,7 +107,9 @@ func getGitRefsInternal(ctx *context.APIContext, filter string) {
 func CreateGitRef(ctx *context.APIContext) {
 	// swagger:operation POST /repos/{owner}/{repo}/git/refs repository repoCreateGitRef
 	// ---
-	// summary: Create a Git Ref
+	// summary: Create a reference
+	// description: Creates a reference for your repository. You are unable to create new references for empty repositories,
+	//             even if the commit SHA-1 hash used exists. Empty repositories are repositories without branches.
 	// consumes:
 	// - application/json
 	// produces:
@@ -133,137 +133,32 @@ func CreateGitRef(ctx *context.APIContext) {
 	//   "201":
 	//     "$ref": "#/responses/Reference"
 	//   "404":
-	//     description: The target does not exist.
+	//     "$ref": "#/responses/notFound"
 	//   "409":
 	//     description: The git ref with the same name already exists.
+	//   "422":
+	//     description: Unable to form reference
 
 	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
 
-	if ctx.Repo.GitRepo.IsReferenceExist(opt.Ref) {
-		ctx.Error(http.StatusConflict, "git ref already exists:", fmt.Errorf("git ref already exists: %s", opt.Ref))
+	if ctx.Repo.GitRepo.IsReferenceExist(opt.RefName) {
+		ctx.Error(http.StatusConflict, "reference already exists:", fmt.Errorf("reference already exists: %s", opt.RefName))
 		return
 	}
 
-	commitID, err := ctx.Repo.GitRepo.GetRefCommitID(opt.Target)
+	ref, err := updateReference(ctx, opt.RefName, opt.Target)
 	if err != nil {
-		if git.IsErrNotExist(err) {
-			ctx.Error(http.StatusNotFound, "target does not exist", fmt.Errorf("target does not exist: %s", opt.Target))
-			return
-		}
-		ctx.Error(http.StatusNotFound, "error getting commit id", fmt.Errorf("error getting commit id: %v", err))
 		return
 	}
-
-	refPrefix, refName := git.SplitRefName(opt.Ref)
-	if refPrefix == git.TagPrefix {
-		if err := releaseservice.CreateNewTag(ctx, ctx.Doer, ctx.Repo.Repository, commitID, refName, ""); err != nil {
-			if models.IsErrTagAlreadyExists(err) {
-				ctx.Error(http.StatusConflict, "tag exist", err)
-				return
-			}
-			if models.IsErrProtectedTagName(err) {
-				ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
-				return
-			}
-
-			ctx.InternalServerError(err)
-			return
-		}
-	} else {
-		if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commitID); err != nil {
-			if models.IsErrRefAlreadyExists(err) {
-				ctx.Error(http.StatusConflict, "ref name exist", err)
-				return
-			}
-			ctx.InternalServerError(err)
-			return
-		}
-	}
-
-	refs, err := ctx.Repo.GitRepo.GetRefsFiltered(opt.Ref)
-	if err != nil {
-		ctx.ServerError("GetRefsFiltered", err)
-		return
-	}
-	if len(refs) != 1 {
-		ctx.Error(http.StatusConflict, "there was a problem creating the gif ref", fmt.Errorf("there was a problem creating the gif ref: %s", opt.Ref))
-		return
-	}
-	ctx.JSON(http.StatusOK, convert.ToGitRef(ctx.Repo.Repository, refs[0]))
+	ctx.JSON(http.StatusCreated, ref)
 }
 
 // UpdateGitRef updates a branch for a repository from a commit SHA
 func UpdateGitRef(ctx *context.APIContext) {
-	// swagger:operation PATCH /repos/{owner}/{repo}/git/refs repository repoUpdateGitRef
+	// swagger:operation PATCH /repos/{owner}/{repo}/git/refs/{ref} repository repoUpdateGitRef
 	// ---
-	// summary: Update a Git Ref
-	// consumes:
-	// - application/json
-	// produces:
-	// - application/json
-	// parameters:
-	// - name: owner
-	//   in: path
-	//   description: owner of the repo
-	//   type: string
-	//   required: true
-	// - name: repo
-	//   in: path
-	//   description: name of the repo
-	//   type: string
-	//   required: true
-	// - name: body
-	//   in: body
-	//   schema:
-	//     "$ref": "#/definitions/UpdateGitRefOption"
-	// responses:
-	//   "201":
-	//     "$ref": "#/responses/Reference"
-	//   "404":
-	//     description: The target or git ref does not exist.
-
-	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
-
-	commitID, err := ctx.Repo.GitRepo.GetRefCommitID(opt.Target)
-	if err != nil {
-		if git.IsErrNotExist(err) {
-			ctx.Error(http.StatusNotFound, "target does not exist", fmt.Errorf("target does not exist: %s", opt.Target))
-			return
-		}
-		ctx.Error(http.StatusNotFound, "error getting commit id", fmt.Errorf("error getting commit id: %v", err))
-		return
-	}
-
-	if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commitID); err != nil {
-		if models.IsErrRefAlreadyExists(err) {
-			ctx.Error(http.StatusConflict, "ref name exist", err)
-			return
-		} else if models.IsErrProtectedRefName(err) {
-			ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
-			return
-		}
-
-		ctx.InternalServerError(err)
-		return
-	}
-
-	refs, err := ctx.Repo.GitRepo.GetRefsFiltered(opt.Ref)
-	if err != nil {
-		ctx.ServerError("GetRefsFiltered", err)
-		return
-	}
-	if len(refs) != 1 {
-		ctx.Error(http.StatusConflict, "there was a problem creating the gif ref", fmt.Errorf("there was a problem creating the gif ref: %s", opt.Ref))
-		return
-	}
-	ctx.JSON(http.StatusOK, convert.ToGitRef(ctx.Repo.Repository, refs[0]))
-}
-
-// DeleteGitRef deletes a git ref for a repository that points to a target commitish
-func DeleteGifRef(ctx *context.APIContext) {
-	// swagger:operation DELETE /repos/{owner}/{repo}/git/refs/{ref} repository repoCreateGitRef
-	// ---
-	// summary: Delete a Git Ref
+	// summary: Update a reference
+	// description:
 	// consumes:
 	// - application/json
 	// produces:
@@ -281,45 +176,168 @@ func DeleteGifRef(ctx *context.APIContext) {
 	//   required: true
 	// - name: ref
 	//   in: path
-	//   description: ref to be deleted
+	//   description: name of the ref to update
+	//   type: string
+	//   required: true
+	// - name: body
+	//   in: body
+	//   schema:
+	//     "$ref": "#/definitions/UpdateGitRefOption"
+	// responses:
+	//   "200":
+	//     "$ref": "#/responses/Reference"
+	//   "404":
+	//     "$ref": "#/responses/notFound"
+
+	refName := fmt.Sprintf("refs/%s", ctx.Params("*"))
+	opt := web.GetForm(ctx).(*api.UpdateGitRefOption)
+
+	if !ctx.Repo.GitRepo.IsReferenceExist(refName) {
+		ctx.Error(http.StatusNotFound, "git ref does not exist:", fmt.Errorf("reference does not exist: %s", refName))
+		return
+	}
+
+	ref, err := updateReference(ctx, refName, opt.Target)
+	if err != nil {
+		return
+	}
+	ctx.JSON(http.StatusOK, ref)
+}
+
+// DeleteGitRef deletes a git ref for a repository that points to a target commitish
+func DeleteGitRef(ctx *context.APIContext) {
+	// swagger:operation DELETE /repos/{owner}/{repo}/git/refs/{ref} repository repoDeleteGitRef
+	// ---
+	// summary: Delete a reference
+	// consumes:
+	// - application/json
+	// produces:
+	// - application/json
+	// parameters:
+	// - name: owner
+	//   in: path
+	//   description: owner of the repo
+	//   type: string
+	//   required: true
+	// - name: repo
+	//   in: path
+	//   description: name of the repo
+	//   type: string
+	//   required: true
+	// - name: ref
+	//   in: path
+	//   description: name of the ref to be deleted
 	//   type: string
 	//   required: true
 	// responses:
 	//   "204":
 	//     "$ref": "#/responses/empty"
-	//   "403":
-	//     "$ref": "#/responses/forbidden"
-	//   "422":
-	//     "$ref": "#/responses/validationError"
+	//   "404":
+	//     "$ref": "#/responses/notFound"
+	//   "405":
+	//     "$ref": "#/responses/error"
+	//   "409":
+	//     "$ref": "#/responses/conflict"
 
-	opt := web.GetForm(ctx).(*api.CreateGitRefOption)
+	refName := fmt.Sprintf("refs/%s", ctx.Params("*"))
 
-	commit, err := ctx.Repo.GitRepo.GetCommit(opt.Target)
+	if !ctx.Repo.GitRepo.IsReferenceExist(refName) {
+		ctx.Error(http.StatusNotFound, "git ref does not exist:", fmt.Errorf("reference does not exist: %s", refName))
+		return
+	}
+
+	_, err := updateReference(ctx, refName, "")
 	if err != nil {
-		ctx.Error(http.StatusNotFound, "target not found", fmt.Errorf("target not found: %v", err))
 		return
 	}
+	ctx.Status(http.StatusNoContent)
+}
 
-	if err := ctx.Repo.GitRepo.CreateRef(opt.Ref, commit.ID.String()); err != nil {
-		if models.IsErrRefAlreadyExists(err) {
-			ctx.Error(http.StatusConflict, "ref name exist", err)
-			return
-		} else if models.IsErrProtectedRefName(err) {
-			ctx.Error(http.StatusMethodNotAllowed, "CreateGitRef", "user not allowed to create protected tag")
-			return
+// updateReference is used for Create, Update and Deletion of a reference, checking for format, permissions and special cases
+func updateReference(ctx *context.APIContext, refName, target string) (*api.Reference, error) {
+	if !strings.HasPrefix(refName, "refs/") {
+		err := git.ErrInvalidRefName{
+			RefName: refName,
+			Reason:  "reference must start with 'refs/'",
 		}
+		ctx.Error(http.StatusUnprocessableEntity, "bad reference'", err)
+		return nil, err
+	}
 
+	if strings.HasPrefix(refName, "refs/pull/") {
+		err := git.ErrInvalidRefName{
+			RefName: refName,
+			Reason:  "refs/pull/* is read-only",
+		}
+		ctx.Error(http.StatusUnprocessableEntity, "reference is read-only'", err)
+		return nil, err
+	}
+
+	if !userCanModifyRef(ctx, refName) {
+		err := git.ErrProtectedRefName{
+			RefName: refName,
+		}
+		ctx.Error(http.StatusMethodNotAllowed, "protected ref named", err)
+		return nil, err
+	}
+
+	// If target is not empty, we update a ref (will create new one if doesn't exist),
+	//   else if target is empty, we delete the ref.
+	if target != "" {
+		commitID, err := ctx.Repo.GitRepo.GetRefCommitID(target)
+		if err != nil {
+			if git.IsErrNotExist(err) {
+				err := fmt.Errorf("target does not exist: %s", target)
+				ctx.Error(http.StatusNotFound, "target does not exist", err)
+				return nil, err
+			}
+			ctx.InternalServerError(err)
+			return nil, err
+		}
+		if err := ctx.Repo.GitRepo.SetReference(refName, commitID); err != nil {
+			message := err.Error()
+			prefix := fmt.Sprintf("exit status 128 - fatal: update_ref failed for ref '%s': ", refName)
+			if strings.HasPrefix(message, prefix) {
+				message = strings.TrimRight(strings.TrimPrefix(message, prefix), "\n")
+				ctx.Error(http.StatusUnprocessableEntity, "reference update failed", message)
+			} else {
+				ctx.InternalServerError(err)
+			}
+			return nil, err
+		}
+		ref, err := ctx.Repo.GitRepo.GetReference(refName)
+		if err != nil {
+			if git.IsErrRefNotFound(err) {
+				ctx.Error(http.StatusUnprocessableEntity, "reference update failed", err)
+			} else {
+				ctx.InternalServerError(err)
+			}
+			return nil, err
+		}
+		return convert.ToGitRef(ctx.Repo.Repository, ref), nil
+	} else if err := ctx.Repo.GitRepo.RemoveReference(refName); err != nil {
 		ctx.InternalServerError(err)
-		return
+		return nil, err
 	}
-	retStruct := &api.Reference{
-		Ref: opt.Ref,
-		URL: ctx.Repo.Repository.APIURL() + "/git/" + util.PathEscapeSegments(opt.Ref),
-		Object: &api.GitObject{
-			SHA:  commit.ID.String(),
-			Type: "unknown-type",
-			URL:  ctx.Repo.Repository.APIURL() + "/git/" + url.PathEscape("unknown-type") + "s/" + url.PathEscape(commit.ID.String()),
-		},
+	return nil, nil
+}
+
+// userCanModifyRef checks based on the reference prefix if the user can modify the reference
+func userCanModifyRef(ctx *context.APIContext, ref string) bool {
+	refPrefix, refName := git.SplitRefName(ref)
+	if refPrefix == "refs/tags/" {
+		if protectedTags, err := git_model.GetProtectedTags(ctx.Repo.Repository.ID); err == nil {
+			if isAllowed, err := git_model.IsUserAllowedToControlTag(protectedTags, refName, ctx.Doer.ID); err == nil {
+				return isAllowed
+			}
+		}
+		return false
 	}
-	ctx.JSON(http.StatusOK, retStruct)
+	if refPrefix == "refs/heads/" {
+		if isProtected, err := git_model.IsProtectedBranch(ctx.Repo.Repository.ID, refName); err == nil {
+			return !isProtected
+		}
+		return false
+	}
+	return true
 }

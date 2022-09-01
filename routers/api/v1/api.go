@@ -1041,8 +1041,13 @@ func Routes() *web.Route {
 						m.Get("/{sha}.{diffType:diff|patch}", repo.DownloadCommitDiffOrPatch)
 					})
 					m.Group("/refs", func() {
-						m.Combo("").Get(repo.GetGitAllRefs).Post(reqRepoWriter(unit.TypeCode), bind(api.CreateGitRefOption{}), repo.CreateGitRef)
+						m.Get("", repo.GetGitAllRefs)
+						m.Post("", reqToken(), reqRepoWriter(unit.TypeCode), bind(api.CreateGitRefOption{}), repo.CreateGitRef)
 						m.Get("/*", repo.GetGitRefs)
+						m.Group("/*", func() {
+							m.Patch("", bind(api.UpdateGitRefOption{}), repo.UpdateGitRef)
+							m.Delete("", repo.DeleteGitRef)
+						}, reqToken(), reqRepoWriter(unit.TypeCode))
 					})
 					m.Get("/trees/{sha}", repo.GetTree)
 					m.Get("/blobs/{sha}", repo.GetBlob)

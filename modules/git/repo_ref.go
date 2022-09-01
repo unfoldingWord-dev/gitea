@@ -9,8 +9,16 @@ func (repo *Repository) GetRefs() ([]*Reference, error) {
 	return repo.GetRefsFiltered("")
 }
 
-// CreateRef creates one ref in the repository
-func (repo *Repository) CreateRef(name, sha string) error {
-	_, _, err := NewCommand(repo.Ctx, "update-ref", name, sha).RunStdString(&RunOpts{Dir: repo.Path})
-	return err
+func (repo *Repository) GetReference(refName string) (*Reference, error) {
+	refs, err := repo.GetRefsFiltered(refName)
+	if err != nil {
+		return nil, err
+	}
+	var ref *Reference
+	for _, ref = range refs {
+		if ref.Name == refName {
+			return ref, nil
+		}
+	}
+	return nil, ErrRefNotFound{RefName: refName}
 }

@@ -503,51 +503,6 @@ func (err ErrTagAlreadyExists) Error() string {
 	return fmt.Sprintf("tag already exists [name: %s]", err.TagName)
 }
 
-// ErrInvalidRefName represents a "InvalidRefName" kind of error.
-type ErrInvalidRefName struct {
-	RefName string
-}
-
-// IsErrInvalidRefName checks if an error is a ErrInvalidRefName.
-func IsErrInvalidRefName(err error) bool {
-	_, ok := err.(ErrInvalidRefName)
-	return ok
-}
-
-func (err ErrInvalidRefName) Error() string {
-	return fmt.Sprintf("ref name is not valid [ref_name: %s]", err.RefName)
-}
-
-// ErrProtectedRefName represents a "ProtectedRefName" kind of error.
-type ErrProtectedRefName struct {
-	RefName string
-}
-
-// IsErrProtectedRefName checks if an error is a ErrProtectedRefName.
-func IsErrProtectedRefName(err error) bool {
-	_, ok := err.(ErrProtectedRefName)
-	return ok
-}
-
-func (err ErrProtectedRefName) Error() string {
-	return fmt.Sprintf("ref name is protected [ref_name: %s]", err.RefName)
-}
-
-// ErrRefAlreadyExists represents an error that ref with such name already exists.
-type ErrRefAlreadyExists struct {
-	RefName string
-}
-
-// IsErrRefAlreadyExists checks if an error is an ErrRefAlreadyExists.
-func IsErrRefAlreadyExists(err error) bool {
-	_, ok := err.(ErrRefAlreadyExists)
-	return ok
-}
-
-func (err ErrRefAlreadyExists) Error() string {
-	return fmt.Sprintf("ref already exists [name: %s]", err.RefName)
-}
-
 // ErrSHADoesNotMatch represents a "SHADoesNotMatch" kind of error.
 type ErrSHADoesNotMatch struct {
 	Path       string
